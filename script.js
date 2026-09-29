@@ -1,6 +1,7 @@
 /* ============================================================
-   PARSER BIODATA A4 — FASE 1 (Revisi 7)
-   - Hapus "Kata-Kata?" (#28 lama) & "Pesan untuk saya?" (#29 lama)
+   PARSER BIODATA A4 — FASE 1 (Revisi 8)
+   - HAPUS FITUR FOTO total
+   - Hapus "Kata-Kata?" & "Pesan untuk saya?"
    - Tambah field "No. HP" setelah Tempat, Tanggal Lahir
    - No. HP diambil dari baris bawah (baris non-nomor)
    - Nomor input tetap 1-29, tampilan A4 jadi 1-28
@@ -42,8 +43,6 @@ const FIELDS = [
 ];
 
 // ==== 2. MAPPING NOMOR INPUT (1-29) → KEY ====
-// Nomor input dari user tetap 1-29 (No. HP tidak bernomor, dikirim di bawah)
-// Nomor 28 & 29 lama (Kata-Kata, Pesan) DIABAIKAN — tidak masuk ke result
 const INPUT_NUMBER_MAP = {
   1:  "nama",
   2:  "namaPanggilan",
@@ -72,17 +71,16 @@ const INPUT_NUMBER_MAP = {
   25: "golDarah",
   26: "semangatHidup",
   27: "kehilanganSemangat"
-  // 28 & 29 (Kata-Kata & Pesan) DIHAPUS — tidak masuk
+  // 28 & 29 (Kata-Kata & Pesan) DIABAIKAN
 };
 
 // ==== 3. STATE ====
 const state = {
   raw: "",
-  data: {},
-  photo: null
+  data: {}
 };
 
-const DRAFT_KEY = "biodata_draft_v1";
+const DRAFT_KEY = "biodata_draft_v2";
 
 // ==== 4. INIT ====
 document.addEventListener("DOMContentLoaded", () => {
@@ -94,8 +92,6 @@ document.addEventListener("DOMContentLoaded", () => {
 function bindEvents() {
   document.getElementById("btnParse").addEventListener("click", handleParse);
   document.getElementById("btnClear").addEventListener("click", handleClear);
-  document.getElementById("photoInput").addEventListener("change", handlePhoto);
-  document.getElementById("btnRemovePhoto").addEventListener("click", handleRemovePhoto);
   document.getElementById("btnPreview").addEventListener("click", showPreview);
   document.getElementById("btnPrint").addEventListener("click", () => window.print());
   document.getElementById("btnBackToEdit").addEventListener("click", showAdd);
@@ -107,9 +103,6 @@ function bindEvents() {
    NORMALIZER UMUM
    ============================================================ */
 
-/**
- * Kapitalkan huruf pertama jika karakter pertama adalah huruf.
- */
 function capitalizeFirst(str) {
   if (!str) return str;
   const trimmed = str.replace(/^\s+/, "");
@@ -121,12 +114,6 @@ function capitalizeFirst(str) {
   return trimmed;
 }
 
-/**
- * Normalisasi Human Need (#24):
- * - Hapus "(diurutkan)"
- * - Perbaiki ejaan typo → tulisan baku
- * - Urutan tetap sesuai input asli
- */
 const HUMAN_NEED_MAP = {
   "growh": "Growth",
   "growth": "Growth",
@@ -158,11 +145,6 @@ function normalizeHumanNeed(text) {
   return fixed.join(", ");
 }
 
-/**
- * Ekstrak nomor HP dari baris yang HANYA berisi nomor.
- * Return: string nomor yang sudah dinormalisasi,
- * atau null kalau baris tidak murni nomor HP.
- */
 function extractPhoneNumber(line) {
   const trimmed = line.trim();
   if (!/^[\+\(\)\d\s\-\.]{9,20}$/.test(trimmed)) return null;
@@ -190,19 +172,17 @@ function parseRaw(text) {
     if (m) {
       const no = parseInt(m[1], 10);
       const value = m[3].trim();
-      const key = INPUT_NUMBER_MAP[no];  // pakai mapping input
+      const key = INPUT_NUMBER_MAP[no];
       if (key) {
         result[key] = value;
         currentKey = key;
         continue;
       } else {
-        // Nomor 28 & 29 lama → diabaikan, reset currentKey
         currentKey = null;
         continue;
       }
     }
 
-    // Cek baris nomor HP standalone
     if (!result.noHP) {
       const phone = extractPhoneNumber(line);
       if (phone) {
@@ -212,7 +192,6 @@ function parseRaw(text) {
       }
     }
 
-    // Baris lanjutan
     if (currentKey) {
       result[currentKey] = (result[currentKey] ? result[currentKey] + " " : "") + line.trim();
     }
@@ -280,12 +259,10 @@ function handleClear() {
   if (!confirm("Hapus semua data yang sedang diisi?")) return;
   state.raw = "";
   state.data = {};
-  state.photo = null;
   localStorage.removeItem(DRAFT_KEY);
 
   document.getElementById("rawInput").value = "";
   document.getElementById("parseStatus").hidden = true;
-  renderPhotoPreview();
 
   FIELDS.forEach(f => {
     const input = document.querySelector(`.field-input[data-key="${f.key}"]`);
@@ -294,48 +271,6 @@ function handleClear() {
     updateRowStatus(input.closest(".field-row"), "");
   });
   window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-function handlePhoto(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    const img = new Image();
-    img.onload = () => {
-      const MAX = 800;
-      let w = img.width, h = img.height;
-      if (w >= h && w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-      else if (h > w && h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-
-      state.photo = canvas.toDataURL("image/jpeg", 0.85);
-      renderPhotoPreview();
-      saveDraft();
-    };
-    img.src = evt.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function handleRemovePhoto() {
-  state.photo = null;
-  document.getElementById("photoInput").value = "";
-  renderPhotoPreview();
-  saveDraft();
-}
-
-function renderPhotoPreview() {
-  const el = document.getElementById("photoPreview");
-  if (state.photo) {
-    el.innerHTML = `<img src="${state.photo}" alt="Foto">`;
-  } else {
-    el.innerHTML = `<span class="photo-empty">Belum ada foto</span>`;
-  }
 }
 
 /* ============================================================
@@ -416,29 +351,19 @@ function showList() {
 }
 
 /* ============================================================
-   RENDER A4
+   RENDER A4 — v8 (TANPA FOTO)
    ============================================================ */
 function renderA4() {
   const a4 = document.getElementById("a4Page");
   a4.innerHTML = "";
 
-  // 1) Foto
-  const photoWrap = document.createElement("div");
-  photoWrap.className = "a4-photo-wrap";
-  if (state.photo) {
-    photoWrap.innerHTML = `<img src="${state.photo}" alt="Foto">`;
-  } else {
-    photoWrap.innerHTML = `<div class="a4-photo-placeholder">FOTO</div>`;
-  }
-  a4.appendChild(photoWrap);
-
-  // 2) Judul
+  // 1) Judul BIODATA (langsung di atas)
   const title = document.createElement("div");
   title.className = "a4-title";
   title.textContent = "BIODATA";
   a4.appendChild(title);
 
-  // 3) Tabel 28 field
+  // 2) Tabel 28 field
   const table = document.createElement("table");
   table.className = "a4-table";
 
@@ -476,8 +401,7 @@ function saveDraft() {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       raw: state.raw,
-      data: state.data,
-      photo: state.photo
+      data: state.data
     }));
   } catch (e) {
     console.warn("saveDraft failed:", e);
@@ -491,10 +415,8 @@ function loadDraft() {
     const d = JSON.parse(raw);
     state.raw = d.raw || "";
     state.data = d.data || {};
-    state.photo = d.photo || null;
 
     document.getElementById("rawInput").value = state.raw;
-    renderPhotoPreview();
 
     FIELDS.forEach(f => {
       const input = document.querySelector(`.field-input[data-key="${f.key}"]`);
